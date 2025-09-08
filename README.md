@@ -4455,3 +4455,273 @@ npx eslint --init
 4. Deploys only if all previous steps pass.
 
 ---
+
+#### Write an Express API with CRUD for products (with pagination & search).
+Ans:
+chatgpt Ans:
+Sure! Here’s a **complete Express.js API** with CRUD operations for `products`, including **pagination** and **search** functionality using MongoDB with Mongoose.
+
+---
+
+### **1. Folder Structure**
+
+```
+backend/
+├── server.js
+├── routes/
+│   └── productRoutes.js
+├── controllers/
+│   └── productController.js
+├── models/
+│   └── Product.js
+├── config/
+│   └── db.js
+├── .env
+└── package.json
+```
+
+---
+
+### **2. Install Dependencies**
+
+```bash
+npm init -y
+npm install express mongoose dotenv body-parser cors
+npm install --save-dev nodemon
+```
+
+Add script in `package.json`:
+
+```json
+"scripts": {
+  "start": "node server.js",
+  "dev": "nodemon server.js"
+}
+```
+
+---
+
+### **3. MongoDB Connection (`config/db.js`)**
+
+```js
+const mongoose = require('mongoose');
+
+const connectDB = async () => {
+  try {
+    const conn = await mongoose.connect(process.env.MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log(`MongoDB Connected: ${conn.connection.host}`);
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+};
+
+module.exports = connectDB;
+```
+
+---
+
+### **4. Product Model (`models/Product.js`)**
+
+```js
+const mongoose = require('mongoose');
+
+const productSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    description: { type: String },
+    price: { type: Number, required: true },
+    category: { type: String },
+    stock: { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model('Product', productSchema);
+```
+
+---
+
+### **5. Product Controller (`controllers/productController.js`)**
+
+```js
+const Product = require('../models/Product');
+
+// @desc    Create a new product
+// @route   POST /api/products
+// @access  Public
+const createProduct = async (req, res) => {
+  try {
+    const product = await Product.create(req.body);
+    res.status(201).json(product);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+// @desc    Get all products with pagination & search
+// @route   GET /api/products
+// @access  Public
+const getProducts = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, search = '' } = req.query;
+
+    const query = search
+      ? { name: { $regex: search, $options: 'i' } }
+      : {};
+
+    const products = await Product.find(query)
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+
+    const total = await Product.countDocuments(query);
+
+    res.json({
+      total,
+      page: Number(page),
+      pages: Math.ceil(total / limit),
+      products,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Get a product by ID
+// @route   GET /api/products/:id
+// @access  Public
+const getProductById = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+    res.json(product);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Update a product
+// @route   PUT /api/products/:id
+// @access  Public
+const updateProduct = async (req, res) => {
+  try {
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    );
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+    res.json(product);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+// @desc    Delete a product
+// @route   DELETE /api/products/:id
+// @access  Public
+const deleteProduct = async (req, res) => {
+  try {
+    const product = await Product.findByIdAndDelete(req.params.id);
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+    res.json({ message: 'Product removed' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = {
+  createProduct,
+  getProducts,
+  getProductById,
+  updateProduct,
+  deleteProduct,
+};
+```
+
+---
+
+### **6. Product Routes (`routes/productRoutes.js`)**
+
+```js
+const express = require('express');
+const router = express.Router();
+const {
+  createProduct,
+  getProducts,
+  getProductById,
+  updateProduct,
+  deleteProduct,
+} = require('../controllers/productController');
+
+router.route('/')
+  .post(createProduct)
+  .get(getProducts);
+
+router.route('/:id')
+  .get(getProductById)
+  .put(updateProduct)
+  .delete(deleteProduct);
+
+module.exports = router;
+```
+
+---
+
+### **7. Server Setup (`server.js`)**
+
+```js
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const connectDB = require('./config/db');
+const productRoutes = require('./routes/productRoutes');
+
+const app = express();
+
+// Connect DB
+connectDB();
+
+// Middleware
+app.use(cors());
+app.use(bodyParser.json());
+
+// Routes
+app.use('/api/products', productRoutes);
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  res.status(500).json({ message: err.message });
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+```
+
+---
+
+### **8. Testing Pagination & Search**
+
+* **Get products (page 2, 5 items per page):**
+
+  ```
+  GET /api/products?page=2&limit=5
+  ```
+
+* **Search products by name containing "phone":**
+
+  ```
+  GET /api/products?search=phone
+  ```
+
+* **Combined pagination + search:**
+
+  ```
+  GET /api/products?page=1&limit=10&search=phone
+  ```
+
+---
